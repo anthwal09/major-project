@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clash Pro v5.0 | Universal Scanner</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div id="loginPage" class="overlay">
+        <div class="login-container">
+            <div class="login-glow"></div>
+            <div class="login-card">
+                <div class="login-header">
+                    <div class="logo-hex">CP</div>
+                    <h2>CLASH <span class="text-gradient">PRO</span></h2>
+                    <p>Universal Resource Intelligence</p>
+                </div>
+                <div class="login-body">
+                    <div class="input-group">
+                        <label>Admin ID</label>
+                        <input type="email" id="user" value="admin@mca.edu">
+                    </div>
+                    <div class="input-group">
+                        <label>Security Key</label>
+                        <input type="password" id="pass" value="1234">
+                    </div>
+                    <button class="btn-login" onclick="initSystem()">Initialize Console</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="dashboardPage" class="main-layout" style="display: none;">
+        <aside class="sidebar">
+            <div class="brand">📅 CLASH <span>PRO</span></div>
+            <div class="user-profile">
+                <img src="https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff">
+                <div><strong id="admin-name-display">System Head</strong><br><small>MCA Dept.</small></div>
+            </div>
+            <nav class="nav-links">
+                <div class="nav-item active" id="tab-dash" onclick="toggleView('dash')">📊 Matrix View</div>
+                <div class="nav-item" id="tab-repo" onclick="toggleView('repo')">📈 Analytics</div>
+                <div class="nav-item" id="tab-sett" onclick="toggleView('sett')">⚙️ Settings</div>
+            </nav>
+            <div class="action-box">
+                <label>Upload Any Excel (.xlsx)</label>
+                <input type="file" id="fileIn" accept=".xlsx, .xls">
+                <button class="btn-run" onclick="analyzeExcel()">Execute Universal Scan</button>
+            </div>
+            <button class="btn-exit" onclick="location.reload()">Kill Session</button>
+        </aside>
+
+        <main class="main-content">
+            <div id="view-dash">
+                <div class="stats-row">
+                    <div class="stat-box">Total Nodes<h2 id="t-total">0</h2></div>
+                    <div class="stat-box danger">Clashes<h2 id="t-clash">0</h2></div>
+                    <div class="stat-box success">Active Rooms<h2 id="t-rooms">0</h2></div>
+                </div>
+                <div class="data-panel">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr><th>Status</th><th>Day/Time</th><th>Faculty/Subject</th><th>Room</th><th>Free Room Suggestion</th></tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-repo" style="display: none;">
+                <div class="chart-grid">
+                    <div class="data-panel">
+                        <h3>Conflict Density</h3>
+                        <div class="chart-container"><canvas id="mainChart"></canvas></div>
+                    </div>
+                    <div class="data-panel">
+                        <h3>Optimization Logs</h3>
+                        <div id="log-output" class="log-text">Waiting for data...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-sett" style="display: none;">
+                <div class="data-panel">
+                    <h3>⚙️ System Configuration</h3>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label>Admin Name</label>
+                            <input type="text" id="set-admin-name" placeholder="Update Name">
+                        </div>
+                        <div class="setting-item">
+                            <label>Master Room List (For Suggestions)</label>
+                            <textarea id="set-room-list" rows="4">LT1, LT2, LT3, CR1, CR2, LAB1, LAB2, LAB3, AUDI, HALL1</textarea>
+                        </div>
+                        <button class="btn-main" onclick="saveSettings()">Save Configuration</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let dataStore = [];
+        let myChart = null;
+        let masterRoomList = ["LT1", "LT2", "LT3", "CR1", "CR2", "LAB1", "LAB2", "LAB3", "AUDI", "HALL1"];
+
+        function initSystem() {
+            document.getElementById('loginPage').style.display = 'none';
+            document.getElementById('dashboardPage').style.display = 'flex';
+        }
+
+        function toggleView(view) {
+            ['dash', 'repo', 'sett'].forEach(v => document.getElementById('view-' + v).style.display = 'none');
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('view-' + view).style.display = 'block';
+            document.getElementById('tab-' + view).classList.add('active');
+            if(view === 'repo') updateCharts();
+        }
+
+        function saveSettings() {
+            const name = document.getElementById('set-admin-name').value;
+            const rooms = document.getElementById('set-room-list').value;
+            if(name) document.getElementById('admin-name-display').innerText = name;
+            if(rooms) masterRoomList = rooms.split(',').map(r => r.trim().toUpperCase());
+            alert("Settings Updated!");
+        }
+
+        function analyzeExcel() {
+            const file = document.getElementById('fileIn').files[0];
+            if(!file) return alert("File Select Karo!");
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const wb = XLSX.read(data, {type: 'array'});
+                const matrix = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, defval: ""});
+
+                // DS: Hash Map & Sets
+                let scheduleMap = {}; 
+                let activeRooms = new Set();
+                dataStore = []; 
+                let clashes = 0;
+                
+                const tbody = document.getElementById('tableBody');
+                tbody.innerHTML = '';
+
+                // Universal Regex Patterns
+                const roomRegex = /(LT\d+|LAB\s?\d+|CR\d+|DL\d+|ROOM\d+|HALL|AUDI|FF|GF)/i;
+                const dayRegex = /(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)/i;
+                const timeRegex = /(\d{1,2}([:.]\d{2})?\s?(AM|PM|TO|-))/i;
+
+                let currentDay = "Unknown Day";
+
+                matrix.forEach((row, rIdx) => {
+                    // 1. Detect Day
+                    let dayFound = row.find(c => dayRegex.test(String(c).toUpperCase()));
+                    if(dayFound) currentDay = String(dayFound).toUpperCase();
+
+                    row.forEach((cell, cIdx) => {
+                        const cellText = String(cell).trim();
+                        
+                        // 2. Detect Room (Core Anchor)
+                        if(roomRegex.test(cellText)) {
+                            let rName = cellText.match(roomRegex)[0].toUpperCase();
+                            activeRooms.add(rName);
+
+                            // 3. Detect Time (Check header or same row)
+                            let tSlot = "General Slot";
+                            let possibleTime = row.find(c => timeRegex.test(String(c))) || matrix[1][cIdx] || matrix[0][cIdx];
+                            if(possibleTime) tSlot = String(possibleTime).replace(/\n/g, " ");
+
+                            // 4. DS Clash Check (Hash Map Lookup)
+                            let slotKey = `${currentDay}_${tSlot}_${rName}`;
+                            let isClash = false;
+                            if(scheduleMap[slotKey]) {
+                                isClash = true;
+                                clashes++;
+                            } else {
+                                scheduleMap[slotKey] = true;
+                            }
+
+                            // 5. Free Room Suggestion Logic
+                            let suggestion = "—";
+                            if(isClash) {
+                                let busyRooms = [];
+                                matrix.forEach(r => {
+                                    let m = String(r[cIdx]).match(roomRegex);
+                                    if(m) busyRooms.push(m[0].toUpperCase());
+                                });
+                                let free = masterRoomList.filter(rm => !busyRooms.includes(rm));
+                                suggestion = free.length > 0 ? "Free: " + free.slice(0, 2).join(", ") : "All Occupied";
+                            }
+
+                            dataStore.push({ d: currentDay, t: tSlot, r: rName });
+
+                            // UI Update
+                            let tr = tbody.insertRow();
+                            if(isClash) tr.className = "row-clash";
+                            tr.innerHTML = `
+                                <td>${isClash ? '🚨 CLASH' : '✅ OK'}</td>
+                                <td><b>${currentDay}</b><br><small>${tSlot}</small></td>
+                                <td>${cellText.replace(roomRegex, "").substring(0, 20) || "Academic Unit"}</td>
+                                <td><span class="badge">${rName}</span></td>
+                                <td><span class="sugg">${suggestion}</span></td>
+                            `;
+                        }
+                    });
+                });
+
+                document.getElementById('t-total').innerText = dataStore.length;
+                document.getElementById('t-clash').innerText = clashes;
+                document.getElementById('t-rooms').innerText = activeRooms.size;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function updateCharts() {
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            const cl = parseInt(document.getElementById('t-clash').innerText);
+            const total = dataStore.length || 1;
+            if(myChart) myChart.destroy();
+            myChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: ['Optimized', 'Conflicts'], datasets: [{ data: [total-cl, cl], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#fff' } } } }
+            });
+            document.getElementById('log-output').innerHTML = `Scanning Complete.<br>Clash Ratio: <b>${((cl/total)*100).toFixed(1)}%</b>`;
+        }
+    </script>
+</body>
+</html>
